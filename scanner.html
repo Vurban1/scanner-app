@@ -1,0 +1,373 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Scanner App</title>
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            padding: 15px;
+            max-width: 600px;
+            margin: 0 auto;
+            background: #f0f0f0;
+        }
+
+        h2 {
+            color: #333;
+            margin-top: 0;
+        }
+
+        button {
+            padding: 14px 20px;
+            margin: 5px 5px 5px 0;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+            button:active {
+                background: #0056b3;
+            }
+
+        .btn-danger {
+            background: #dc3545;
+        }
+
+        .btn-success {
+            background: #28a745;
+        }
+
+        #camera {
+            width: 100%;
+            max-width: 400px;
+            margin: 10px auto;
+            display: block;
+            border-radius: 12px;
+            background: #333;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 12px;
+            font-size: 16px;
+        }
+
+        .status {
+            padding: 12px;
+            border-radius: 12px;
+            margin: 10px 0;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .connecting {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+
+        #history {
+            background: white;
+            padding: 12px;
+            border-radius: 12px;
+            height: 280px;
+            overflow-y: auto;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            font-size: 13px;
+        }
+
+        .history-entry {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            font-family: monospace;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>📱 Scanner App</h2>
+
+    <div id="status" class="status disconnected">⚫ Nije povezano</div>
+
+    <div class="button-group">
+        <button id="scanBtn">📷 Skeniraj QR/Barkod</button>
+        <button id="photoBtn">📸 Uslikaj dokument</button>
+        <button id="disconnectBtn" class="btn-danger">🔌 Prekini vezu</button>
+    </div>
+
+    <video id="camera" autoplay playsinline style="display:none"></video>
+    <canvas id="canvas" style="display:none"></canvas>
+
+    <input type="text" id="manualInput" placeholder="✏️ Ručni unos teksta...">
+    <button id="sendBtn" class="btn-success">✉️ Pošalji</button>
+
+    <h3>📜 Historija</h3>
+    <div id="history"></div>
+
+    <script>
+        // --- Konfiguracija ---
+        let connection = null;
+        let roomId = null;
+        let deviceId = "web_" + Math.random().toString(36).substr(2, 8);
+        let video = document.getElementById('camera');
+        let canvas = document.getElementById('canvas');
+
+        // Server URL - promijeni ako treba
+        const SERVER_URL = "http://localhost:8080";
+
+        // --- Povezivanje na SignalR server ---
+        async function connectToServer(room) {
+            roomId = room;
+
+            updateStatus("connecting", "🔄 Povezivanje...");
+
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl(SERVER_URL + "/signalr")
+                .withAutomaticReconnect()
+                .build();
+
+            // Event kad se veza prekine
+            connection.onclose((error) => {
+                updateStatus("disconnected", "⚫ Veza prekinuta");
+            });
+
+            connection.onreconnecting((error) => {
+                updateStatus("connecting", "🔄 Ponovno povezivanje...");
+            });
+
+            connection.onreconnected((connectionId) => {
+                updateStatus("connected", `✅ Povezano na PC (soba: ${roomId})`);
+                addHistory("Ponovo povezano na PC");
+            });
+
+            try {
+                await connection.start();
+                await connection.invoke("JoinRoom", roomId, deviceId);
+                updateStatus("connected", `✅ Povezano na PC (soba: ${roomId})`);
+                addHistory(`🔗 Povezano na sobu: ${roomId}`);
+            } catch (err) {
+                console.error(err);
+                updateStatus("disconnected", `❌ Greška: ${err.message}`);
+                addHistory(`❌ Greška pri povezivanju: ${err.message}`);
+            }
+        }
+
+        function updateStatus(state, message) {
+            let statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${state}`;
+        }
+
+        async function disconnectFromServer() {
+            if (connection) {
+                await connection.stop();
+                connection = null;
+                roomId = null;
+                updateStatus("disconnected", "⚫ Nije povezano");
+                addHistory("🔌 Veza prekinuta");
+            }
+        }
+
+        // --- Slanje podataka ---
+        async function sendData(type, content) {
+            if (!connection || connection.state !== "Connected") {
+                alert("Niste povezani. Skeniraj QR kod sa PC ekrana.");
+                return;
+            }
+
+            try {
+                await connection.invoke("SendData", roomId, deviceId, type, content);
+                let shortContent = content.length > 60 ? content.substring(0, 60) + "..." : content;
+                addHistory(`📤 Poslano (${type}): ${shortContent}`);
+            } catch (err) {
+                addHistory(`❌ Greška pri slanju: ${err.message}`);
+                alert("Slanje nije uspjelo: " + err.message);
+            }
+        }
+
+        // --- QR/Barkod skeniranje ---
+        async function startScanner() {
+            if ('BarcodeDetector' in window) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: "environment" }
+                    });
+                    video.srcObject = stream;
+                    video.style.display = "block";
+                    video.play();
+                    addHistory("📷 Kamera aktivirana, skeniraj...");
+
+                    const barcodeDetector = new BarcodeDetector({
+                        formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'codabar', 'upc_a', 'upc_e']
+                    });
+
+                    async function scan() {
+                        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+                            try {
+                                const barcodes = await barcodeDetector.detect(video);
+                                if (barcodes.length > 0) {
+                                    const result = barcodes[0].rawValue;
+                                    // Zaustavi kameru
+                                    stream.getTracks().forEach(track => track.stop());
+                                    video.style.display = "none";
+
+                                    addHistory(`🔍 Skenirano: ${result.substring(0, 50)}`);
+                                    navigator.vibrate?.(200);
+
+                                    // Provjeri da li je QR kod za povezivanje
+                                    if (result.startsWith('http://') || result.startsWith('https://')) {
+                                        try {
+                                            let url = new URL(result);
+                                            let room = url.searchParams.get('room');
+                                            if (room) {
+                                                await connectToServer(room);
+                                            } else {
+                                                await sendData("QR", result);
+                                            }
+                                        } catch(e) {
+                                            await sendData("QR", result);
+                                        }
+                                    } else {
+                                        await sendData("Barcode", result);
+                                    }
+                                    return;
+                                }
+                            } catch(e) { console.log("Scan error:", e); }
+                        }
+                        requestAnimationFrame(scan);
+                    }
+                    scan();
+                } catch (err) {
+                    alert("Greška pri pristupu kameri: " + err.message);
+                    addHistory("❌ Greška pri pristupu kameri");
+                }
+            } else {
+                alert("Vaš browser ne podržava BarcodeDetector API. Molimo koristite Chrome, Edge ili Safari 15.4+.");
+                addHistory("❌ Browser ne podržava skeniranje");
+            }
+        }
+
+        // --- Slikanje dokumenta ---
+        async function takePhoto() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" }
+                });
+                video.srcObject = stream;
+                video.style.display = "block";
+                video.play();
+                addHistory("📸 Pritisni 'OK' za slikanje...");
+
+                setTimeout(() => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    canvas.getContext('2d').drawImage(video, 0, 0);
+                    const base64 = canvas.toDataURL('image/jpeg', 0.8);
+                    stream.getTracks().forEach(track => track.stop());
+                    video.style.display = "none";
+                    sendData("Image", base64);
+                }, 1000);
+            } catch (err) {
+                alert("Greška pri pristupu kameri: " + err.message);
+                addHistory("❌ Greška pri fotografisanju");
+            }
+        }
+
+        // --- Historija sa localStorage ---
+        function addHistory(text) {
+            let historyDiv = document.getElementById('history');
+            let entry = document.createElement('div');
+            entry.className = 'history-entry';
+            entry.textContent = new Date().toLocaleTimeString() + " - " + text;
+            historyDiv.insertBefore(entry, historyDiv.firstChild);
+
+            // Spremi u localStorage
+            let history = JSON.parse(localStorage.getItem('scan_history') || '[]');
+            history.unshift(new Date().toLocaleTimeString() + " - " + text);
+            if (history.length > 100) history.pop();
+            localStorage.setItem('scan_history', JSON.stringify(history));
+        }
+
+        function loadHistory() {
+            let history = JSON.parse(localStorage.getItem('scan_history') || '[]');
+            let historyDiv = document.getElementById('history');
+            history.forEach(text => {
+                let entry = document.createElement('div');
+                entry.className = 'history-entry';
+                entry.textContent = text;
+                historyDiv.appendChild(entry);
+            });
+        }
+
+        function clearHistory() {
+            localStorage.removeItem('scan_history');
+            document.getElementById('history').innerHTML = '';
+            addHistory("Historija očišćena");
+        }
+
+        // --- Eventi ---
+        document.getElementById('scanBtn').onclick = startScanner;
+        document.getElementById('photoBtn').onclick = takePhoto;
+        document.getElementById('sendBtn').onclick = () => {
+            let text = document.getElementById('manualInput').value.trim();
+            if (text) {
+                sendData("Manual", text);
+                document.getElementById('manualInput').value = '';
+            }
+        };
+        document.getElementById('disconnectBtn').onclick = disconnectFromServer;
+
+        // Ako URL sadrži room parametar, poveži se odmah
+        let urlParams = new URLSearchParams(window.location.search);
+        let room = urlParams.get('room');
+        if (room) {
+            connectToServer(room);
+        } else {
+            addHistory("👋 Otvori AppServer na PC-u, skeniraj QR kod sa mobitela");
+        }
+
+        loadHistory();
+
+        // Dodaj dugme za brisanje historije (opcionalno)
+        let clearBtn = document.createElement('button');
+        clearBtn.textContent = "🗑️ Obriši historiju";
+        clearBtn.style.background = "#6c757d";
+        clearBtn.onclick = clearHistory;
+        document.querySelector('.button-group').appendChild(clearBtn);
+
+        console.log("Scanner App pokrenut, deviceId:", deviceId);
+    </script>
+</body>
+</html>
