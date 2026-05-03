@@ -1,373 +1,288 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Scanner App</title>
-    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+    <title>Mobile Scanner</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/2.4.3/signalr.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
-        * {
+        body {
+            font-family: Arial, sans-serif;
+            margin: 10px;
+            padding: 10px;
+            background: #f5f5f5;
+        }
+
+        #scanner-container {
+            width: 100%;
+            height: 300px;
+            margin-bottom: 10px;
+        }
+
+        #result {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            word-break: break-all;
+        }
+
+        #log {
+            margin: 10px 0;
+            padding: 10px;
+            background: #e0e0e0;
+            height: 150px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        input, button {
+            margin: 5px 0;
+            padding: 8px;
+            width: 100%;
             box-sizing: border-box;
         }
 
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            padding: 15px;
-            max-width: 600px;
-            margin: 0 auto;
-            background: #f0f0f0;
-        }
-
-        h2 {
-            color: #333;
-            margin-top: 0;
-        }
-
         button {
-            padding: 14px 20px;
-            margin: 5px 5px 5px 0;
-            background: #007bff;
+            background-color: #4CAF50;
             color: white;
             border: none;
-            border-radius: 12px;
-            font-size: 16px;
             cursor: pointer;
         }
 
-            button:active {
-                background: #0056b3;
+            button:hover {
+                background-color: #45a049;
             }
 
-        .btn-danger {
-            background: #dc3545;
-        }
-
-        .btn-success {
-            background: #28a745;
-        }
-
-        #camera {
-            width: 100%;
-            max-width: 400px;
-            margin: 10px auto;
-            display: block;
-            border-radius: 12px;
-            background: #333;
-        }
-
-        input {
-            width: 100%;
-            padding: 14px;
-            margin: 10px 0;
-            border: 1px solid #ccc;
-            border-radius: 12px;
-            font-size: 16px;
-        }
-
-        .status {
-            padding: 12px;
-            border-radius: 12px;
-            margin: 10px 0;
-            text-align: center;
-            font-weight: bold;
-        }
-
-        .connected {
-            background: #d4edda;
+        .status-connected {
+            background-color: #d4edda;
             color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .disconnected {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .connecting {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeeba;
-        }
-
-        #history {
-            background: white;
-            padding: 12px;
-            border-radius: 12px;
-            height: 280px;
-            overflow-y: auto;
-            margin-top: 10px;
-            border: 1px solid #ddd;
-            font-size: 13px;
-        }
-
-        .history-entry {
             padding: 8px;
-            border-bottom: 1px solid #eee;
-            font-family: monospace;
+            border-radius: 4px;
+            margin: 10px 0;
         }
 
-        .button-group {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin: 15px 0;
+        .status-disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 8px;
+            border-radius: 4px;
+            margin: 10px 0;
         }
     </style>
 </head>
 <body>
+    <h1>Mobile Scanner</h1>
 
-    <h2>📱 Scanner App</h2>
+    <div id="status" class="status-disconnected">⚫ Not connected</div>
 
-    <div id="status" class="status disconnected">⚫ Nije povezano</div>
-
-    <div class="button-group">
-        <button id="scanBtn">📷 Skeniraj QR/Barkod</button>
-        <button id="photoBtn">📸 Uslikaj dokument</button>
-        <button id="disconnectBtn" class="btn-danger">🔌 Prekini vezu</button>
+    <div>
+        <label for="serverUrl">Server URL:</label>
+        <input type="text" id="serverUrl" placeholder="http://192.168.100.134:8082/signalr" />
     </div>
+    <div>
+        <label for="deviceId">Device ID:</label>
+        <input type="text" id="deviceId" placeholder="Scan QR Code or enter manually" />
+    </div>
+    <button id="connectBtn">Connect to PC</button>
 
-    <video id="camera" autoplay playsinline style="display:none"></video>
-    <canvas id="canvas" style="display:none"></canvas>
+    <div id="scanner-container"></div>
 
-    <input type="text" id="manualInput" placeholder="✏️ Ručni unos teksta...">
-    <button id="sendBtn" class="btn-success">✉️ Pošalji</button>
-
-    <h3>📜 Historija</h3>
-    <div id="history"></div>
+    <div id="result">Last scanned: None</div>
+    <div id="log"></div>
 
     <script>
-        // --- Konfiguracija ---
+        let html5QrCode = null;
         let connection = null;
-        let roomId = null;
-        let deviceId = "web_" + Math.random().toString(36).substr(2, 8);
-        let video = document.getElementById('camera');
-        let canvas = document.getElementById('canvas');
+        let proxy = null;
+        let currentDeviceId = null;
+        let currentServerUrl = null;
 
-        // Server URL - promijeni ako treba
-        const SERVER_URL = "http://localhost:8080";
+        // Initialize scanner
+        function initScanner() {
+            if (html5QrCode === null) {
+                html5QrCode = new Html5Qrcode("scanner-container");
+            }
+        }
 
-        // --- Povezivanje na SignalR server ---
-        async function connectToServer(room) {
-            roomId = room;
+        // Start QR scanner
+        function startScanner() {
+            initScanner();
 
-            updateStatus("connecting", "🔄 Povezivanje...");
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { qrbox: { width: 250, height: 250 } },
+                (qrCodeMessage) => {
+                    logMessage(`QR scanned: ${qrCodeMessage.substring(0, 100)}`);
 
-            connection = new signalR.HubConnectionBuilder()
-                .withUrl(SERVER_URL + "/signalr")
-                .withAutomaticReconnect()
-                .build();
+                    // Try to parse URL
+                    try {
+                        const url = new URL(qrCodeMessage);
+                        const deviceIdParam = url.searchParams.get("DeviceID");
+                        const serverUrlParam = url.searchParams.get("ServerURL");
 
-            // Event kad se veza prekine
-            connection.onclose((error) => {
-                updateStatus("disconnected", "⚫ Veza prekinuta");
-            });
+                        if (deviceIdParam && serverUrlParam) {
+                            document.getElementById("deviceId").value = deviceIdParam;
+                            document.getElementById("serverUrl").value = serverUrlParam;
+                            connectToSignalR(deviceIdParam, serverUrlParam);
+                        } else {
+                            // If QR contains just a URL with room
+                            window.open(qrCodeMessage, '_blank');
+                        }
+                    } catch (e) {
+                        // Not a URL, treat as barcode
+                        logMessage(`Scanned barcode: ${qrCodeMessage}`);
+                        if (connection && connection.state === $.signalR.connectionState.connected) {
+                            sendToServer(qrCodeMessage);
+                        } else {
+                            logMessage("Not connected to server. Please connect first.");
+                        }
+                    }
 
-            connection.onreconnecting((error) => {
-                updateStatus("connecting", "🔄 Ponovno povezivanje...");
-            });
+                    // Stop scanner after successful scan
+                    html5QrCode.stop().catch(err => {
+                        logMessage("Error stopping scanner: " + err);
+                    });
 
-            connection.onreconnected((connectionId) => {
-                updateStatus("connected", `✅ Povezano na PC (soba: ${roomId})`);
-                addHistory("Ponovo povezano na PC");
-            });
+                    // Restart scanner after 2 seconds
+                    setTimeout(() => {
+                        html5QrCode.start(
+                            { facingMode: "environment" },
+                            { qrbox: { width: 250, height: 250 } },
+                            arguments.callee
+                        ).catch(err => logMessage("Scanner restart error: " + err));
+                    }, 2000);
+                }
+            ).catch(err => logMessage(`QR Scanner Error: ${err}`));
+        }
+
+        // Connect to SignalR server (old SignalR style)
+        function connectToSignalR(deviceId, serverUrl) {
+            currentDeviceId = deviceId;
+            currentServerUrl = serverUrl;
 
             try {
-                await connection.start();
-                await connection.invoke("JoinRoom", roomId, deviceId);
-                updateStatus("connected", `✅ Povezano na PC (soba: ${roomId})`);
-                addHistory(`🔗 Povezano na sobu: ${roomId}`);
+                // Ensure serverUrl ends correctly
+                let hubUrl = serverUrl;
+                if (!hubUrl.endsWith("/signalr")) {
+                    hubUrl = hubUrl.replace(/\/$/, '');
+                }
+
+                logMessage(`Connecting to ${hubUrl}...`);
+
+                if (connection) {
+                    connection.stop();
+                }
+
+                // Create connection for old SignalR
+                connection = $.hubConnection(hubUrl, { useDefaultPath: false });
+                proxy = connection.createHubProxy("ScanHub");
+
+                // Register events
+                proxy.on("receiveBarcode", (barcode) => {
+                    document.getElementById("result").textContent = `Last scanned: ${barcode}`;
+                    logMessage(`Received: ${barcode}`);
+                });
+
+                proxy.on("logMessage", (message) => {
+                    logMessage(message);
+                });
+
+                proxy.on("registered", (registeredDeviceId) => {
+                    logMessage(`Registered as: ${registeredDeviceId}`);
+                    updateStatus(true);
+                });
+
+                // Start connection
+                connection.start()
+                    .done(() => {
+                        logMessage(`Connected to server`);
+                        proxy.invoke("RegisterMobile", deviceId)
+                            .done(() => {
+                                logMessage(`Registration sent for ${deviceId}`);
+                            })
+                            .fail((err) => {
+                                logMessage(`Registration failed: ${err}`);
+                            });
+                    })
+                    .fail((err) => {
+                        logMessage(`Connection error: ${err}`);
+                        updateStatus(false);
+                        // Retry after 5 seconds
+                        setTimeout(() => connectToSignalR(deviceId, serverUrl), 5000);
+                    });
+
             } catch (err) {
-                console.error(err);
-                updateStatus("disconnected", `❌ Greška: ${err.message}`);
-                addHistory(`❌ Greška pri povezivanju: ${err.message}`);
+                logMessage(`Error: ${err}`);
+                updateStatus(false);
             }
         }
 
-        function updateStatus(state, message) {
-            let statusDiv = document.getElementById('status');
-            statusDiv.textContent = message;
-            statusDiv.className = `status ${state}`;
-        }
-
-        async function disconnectFromServer() {
-            if (connection) {
-                await connection.stop();
-                connection = null;
-                roomId = null;
-                updateStatus("disconnected", "⚫ Nije povezano");
-                addHistory("🔌 Veza prekinuta");
-            }
-        }
-
-        // --- Slanje podataka ---
-        async function sendData(type, content) {
-            if (!connection || connection.state !== "Connected") {
-                alert("Niste povezani. Skeniraj QR kod sa PC ekrana.");
+        // Send scanned barcode to server
+        function sendToServer(barcode) {
+            if (!connection || connection.state !== $.signalR.connectionState.connected) {
+                logMessage("Not connected to server");
                 return;
             }
 
-            try {
-                await connection.invoke("SendData", roomId, deviceId, type, content);
-                let shortContent = content.length > 60 ? content.substring(0, 60) + "..." : content;
-                addHistory(`📤 Poslano (${type}): ${shortContent}`);
-            } catch (err) {
-                addHistory(`❌ Greška pri slanju: ${err.message}`);
-                alert("Slanje nije uspjelo: " + err.message);
+            if (!currentDeviceId) {
+                logMessage("No device ID");
+                return;
             }
-        }
 
-        // --- QR/Barkod skeniranje ---
-        async function startScanner() {
-            if ('BarcodeDetector' in window) {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: "environment" }
-                    });
-                    video.srcObject = stream;
-                    video.style.display = "block";
-                    video.play();
-                    addHistory("📷 Kamera aktivirana, skeniraj...");
-
-                    const barcodeDetector = new BarcodeDetector({
-                        formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'codabar', 'upc_a', 'upc_e']
-                    });
-
-                    async function scan() {
-                        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
-                            try {
-                                const barcodes = await barcodeDetector.detect(video);
-                                if (barcodes.length > 0) {
-                                    const result = barcodes[0].rawValue;
-                                    // Zaustavi kameru
-                                    stream.getTracks().forEach(track => track.stop());
-                                    video.style.display = "none";
-
-                                    addHistory(`🔍 Skenirano: ${result.substring(0, 50)}`);
-                                    navigator.vibrate?.(200);
-
-                                    // Provjeri da li je QR kod za povezivanje
-                                    if (result.startsWith('http://') || result.startsWith('https://')) {
-                                        try {
-                                            let url = new URL(result);
-                                            let room = url.searchParams.get('room');
-                                            if (room) {
-                                                await connectToServer(room);
-                                            } else {
-                                                await sendData("QR", result);
-                                            }
-                                        } catch(e) {
-                                            await sendData("QR", result);
-                                        }
-                                    } else {
-                                        await sendData("Barcode", result);
-                                    }
-                                    return;
-                                }
-                            } catch(e) { console.log("Scan error:", e); }
-                        }
-                        requestAnimationFrame(scan);
-                    }
-                    scan();
-                } catch (err) {
-                    alert("Greška pri pristupu kameri: " + err.message);
-                    addHistory("❌ Greška pri pristupu kameri");
-                }
-            } else {
-                alert("Vaš browser ne podržava BarcodeDetector API. Molimo koristite Chrome, Edge ili Safari 15.4+.");
-                addHistory("❌ Browser ne podržava skeniranje");
-            }
-        }
-
-        // --- Slikanje dokumenta ---
-        async function takePhoto() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" }
+            logMessage(`Sending barcode: ${barcode}`);
+            proxy.invoke("SendBarcode", currentDeviceId, barcode)
+                .done(() => {
+                    logMessage(`Sent successfully`);
+                    document.getElementById("result").textContent = `Last scanned: ${barcode}`;
+                })
+                .fail((err) => {
+                    logMessage(`Send failed: ${err}`);
                 });
-                video.srcObject = stream;
-                video.style.display = "block";
-                video.play();
-                addHistory("📸 Pritisni 'OK' za slikanje...");
+        }
 
-                setTimeout(() => {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    canvas.getContext('2d').drawImage(video, 0, 0);
-                    const base64 = canvas.toDataURL('image/jpeg', 0.8);
-                    stream.getTracks().forEach(track => track.stop());
-                    video.style.display = "none";
-                    sendData("Image", base64);
-                }, 1000);
-            } catch (err) {
-                alert("Greška pri pristupu kameri: " + err.message);
-                addHistory("❌ Greška pri fotografisanju");
+        // Update connection status UI
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById("status");
+            if (connected) {
+                statusDiv.className = "status-connected";
+                statusDiv.innerHTML = "✅ Connected to PC";
+            } else {
+                statusDiv.className = "status-disconnected";
+                statusDiv.innerHTML = "⚫ Not connected";
             }
         }
 
-        // --- Historija sa localStorage ---
-        function addHistory(text) {
-            let historyDiv = document.getElementById('history');
-            let entry = document.createElement('div');
-            entry.className = 'history-entry';
-            entry.textContent = new Date().toLocaleTimeString() + " - " + text;
-            historyDiv.insertBefore(entry, historyDiv.firstChild);
-
-            // Spremi u localStorage
-            let history = JSON.parse(localStorage.getItem('scan_history') || '[]');
-            history.unshift(new Date().toLocaleTimeString() + " - " + text);
-            if (history.length > 100) history.pop();
-            localStorage.setItem('scan_history', JSON.stringify(history));
+        // Log messages
+        function logMessage(message) {
+            const logDiv = document.getElementById("log");
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
         }
 
-        function loadHistory() {
-            let history = JSON.parse(localStorage.getItem('scan_history') || '[]');
-            let historyDiv = document.getElementById('history');
-            history.forEach(text => {
-                let entry = document.createElement('div');
-                entry.className = 'history-entry';
-                entry.textContent = text;
-                historyDiv.appendChild(entry);
-            });
-        }
-
-        function clearHistory() {
-            localStorage.removeItem('scan_history');
-            document.getElementById('history').innerHTML = '';
-            addHistory("Historija očišćena");
-        }
-
-        // --- Eventi ---
-        document.getElementById('scanBtn').onclick = startScanner;
-        document.getElementById('photoBtn').onclick = takePhoto;
-        document.getElementById('sendBtn').onclick = () => {
-            let text = document.getElementById('manualInput').value.trim();
-            if (text) {
-                sendData("Manual", text);
-                document.getElementById('manualInput').value = '';
+        // Manual connect button
+        document.getElementById("connectBtn").addEventListener("click", () => {
+            const deviceId = document.getElementById("deviceId").value;
+            const serverUrl = document.getElementById("serverUrl").value;
+            if (deviceId && serverUrl) {
+                connectToSignalR(deviceId, serverUrl);
+            } else {
+                alert("Please enter Device ID and Server URL!");
             }
+        });
+
+        // Start scanner on page load
+        window.onload = function () {
+            initScanner();
+            startScanner();
+            logMessage("Scanner ready. Scan QR code from PC or enter connection details manually.");
         };
-        document.getElementById('disconnectBtn').onclick = disconnectFromServer;
-
-        // Ako URL sadrži room parametar, poveži se odmah
-        let urlParams = new URLSearchParams(window.location.search);
-        let room = urlParams.get('room');
-        if (room) {
-            connectToServer(room);
-        } else {
-            addHistory("👋 Otvori AppServer na PC-u, skeniraj QR kod sa mobitela");
-        }
-
-        loadHistory();
-
-        // Dodaj dugme za brisanje historije (opcionalno)
-        let clearBtn = document.createElement('button');
-        clearBtn.textContent = "🗑️ Obriši historiju";
-        clearBtn.style.background = "#6c757d";
-        clearBtn.onclick = clearHistory;
-        document.querySelector('.button-group').appendChild(clearBtn);
-
-        console.log("Scanner App pokrenut, deviceId:", deviceId);
     </script>
 </body>
 </html>
